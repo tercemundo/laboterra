@@ -1,113 +1,220 @@
-## Precedencia de Variables en tu Proyecto
+## Nuevas Características de outputs.tf
 
-### terraform.tfvars SOBRESCRIBE a variables.tf
+### Outputs Básicos
+Estos son simples y muestran valores directos de los recursos creados:[1]
 
-En tu caso específico, **`terraform.tfvars` tiene precedencia** sobre los valores `default` definidos en `variables.tf`.[2][3][1]
+**proyecto_id**: Muestra el ID único generado hexadecimal (ej: `a3f8d92c1b4e7e2a`)
+**servidor_nombre**: Nombre aleatorio del servidor (ej: `servidor-happy-dolphin`)
+**regiones_seleccionadas**: Lista de regiones elegidas aleatoriamente
+**password_length**: Longitud del password (16)
 
-**Ejemplo concreto de tu configuración:**
+### Outputs Avanzados con Estructuras Complejas
 
+**proyecto_info** - Objeto compuesto que combina valores de múltiples fuentes:[1]
 ```hcl
-# variables.tf declara:
-variable "proyecto_nombre" {
-  default = "mi-proyecto"
+{
+  id = "a3f8d92c1b4e7e2a"
+  nombre = "terraform-advanced"  # de terraform.tfvars
+  region = "us-west-2"  # de terraform.tfvars
+  directorio = "terraform-advanced-a3f8d92c1b4e7e2a"
+  backup_enabled = true
+  created_at = "2025-11-19T02:20:00Z"
 }
-
-# terraform.tfvars asigna:
-proyecto_nombre = "terraform-advanced"
-
-# Resultado final: "terraform-advanced" ✅
 ```
 
-El valor de `terraform.tfvars` **gana** porque tiene mayor precedencia que el `default` de `variables.tf`.[4][1]
+**aplicacion_details** - Construye URLs dinámicas basadas en variables:[1]
+```hcl
+endpoint = "https://ecommerce-api.us-west-2.example.com:3000"
+```
 
-### Orden Completo de Precedencia
+### Output Sensible (Seguridad)
 
-De **menor a mayor prioridad**:[3][4]
+**configuracion_completa** - Marcado como `sensitive = true`, lo que significa que NO se mostrará en la terminal cuando ejecutes `terraform apply`, pero estará disponible en el state:[1]
+```bash
+# Verlo requiere:
+terraform output configuracion_completa
+```
 
-1. **`default` en variables.tf** → `"mi-proyecto"`
-2. **Variables de entorno** → `export TF_VAR_proyecto_nombre="desde-env"`
-3. **`terraform.tfvars`** → `proyecto_nombre = "terraform-advanced"`
-4. **`-var-file`** → `terraform apply -var-file="prod.tfvars"`
-5. **`-var` en CLI** → `terraform apply -var="proyecto_nombre=overridden"` (máxima prioridad)
+### Outputs con Funciones Aplicadas
 
-## Qué Pasa Cuando Ejecutás `terraform apply`
+**estadisticas** - Usa múltiples funciones de Terraform:[1]
 
-### Fase 1: Validación de Variables
+**length()**: Cuenta elementos en listas
+```hcl
+total_entornos = length(var.entornos)  # Resultado: 4 (dev, stage, prod, demo)
+```
 
-Terraform procesa las variables en este orden:[1]
+**sum()**: Suma valores de un array calculado con `for`
+```hcl
+cpu_total = sum([
+  for env, config in var.configuracion_entornos : config.cpu * config.replicas
+])
+# Calcula: (1×1) + (2×2) + (8×5) + (1×1) = 46 CPUs
+```
 
-**Variables con valor asignado** (de `terraform.tfvars`):
-- `proyecto_nombre = "terraform-advanced"` ✅
-- `instancias_count = 5` ✅ (cumple validación: entre 1 y 10)
-- `habilitar_backup = true` ✅
-- `region = "us-west-2"` ✅ (obligatoria, no tiene default)
-- `entornos = ["dev", "stage", "prod", "demo"]` ✅
-- `configuracion_entornos` y `aplicacion_config` ✅
+**join()**: Une elementos de lista con un separador
+```hcl
+features_formateadas = join(", ", var.aplicacion_config.features)
+# Resultado: "auth, payments, inventory, analytics, logging"
+```
 
-**Importante**: La variable `region` **no tiene default** en `variables.tf`, entonces **debe** proporcionarse en `terraform.tfvars` o Terraform te la pedirá interactivamente.[1]
+**upper()**: Convierte a mayúsculas
+```hcl
+proyecto_uppercase = upper(var.proyecto_nombre)
+# Resultado: "TERRAFORM-ADVANCED"
+```
 
-### Fase 2: Orden de Ejecución de Recursos
+**title()** y **replace()**: Combinados para formatear texto
+```hcl
+region_formatted = title(replace(var.region, "-", " "))
+# "us-west-2" → "Us West 2"
+```
 
-Basándome en el grafo de dependencias:[1]
+**For con condicional**: Filtra elementos basándose en condiciones
+```hcl
+entornos_alta_disponibilidad = [
+  for env, config in var.configuracion_entornos : env
+  if config.replicas > 1
+]
+# Resultado: ["stage", "prod"]
+```
 
-**Paso 1 - Recursos Random (paralelos)**:
-- `random_id.proyecto_id` → genera ID único (ej: `a3f8d92c1b4e7e2a`)
-- `random_password.db_password` → crea contraseña de 16 caracteres
-- `random_pet.servidor_nombre` → genera nombre (ej: `servidor-happy-dolphin`)
-- `random_uuid.session_id` → crea UUID único
-- `random_shuffle.regiones_disponibles` → selecciona 2 de 4 regiones
+### Output de URLs Generadas Dinámicamente
 
-**Paso 2 - Archivos Locales (paralelos después de random)**:
-- `local_file.directorio_info` → crea `proyecto-a3f8d92c1b4e7e2a/README.md`
-- `local_file.config_json` → crea `proyecto-a3f8d92c1b4e7e2a/config.json`
-- `local_file.init_script` → crea `proyecto-a3f8d92c1b4e7e2a/init.sh` (con permisos 0755)
+**endpoints** - Genera URLs para cada entorno usando `for`:[1]
+```hcl
+{
+  dev = {
+    app_url = "https://ecommerce-api-dev.us-west-2.example.com:3000"
+    db_url = "mysql://ecommerce-api-dev-db.us-west-2.example.com:3306"
+    admin_url = "https://admin-ecommerce-api-dev.us-west-2.example.com"
+  }
+  stage = { ... }
+  prod = { ... }
+  demo = { ... }
+}
+```
 
-**Paso 3 - Setup del Proyecto**:
-- `null_resource.setup_proyecto` → ejecuta `init.sh`, crea carpetas (logs/, data/, backups/)
+## Nuevas Características de funciones.tf
 
-**Paso 4 - Mostrar Información**:
-- `null_resource.mostrar_info` → imprime resumen del proyecto en terminal
+### Locals (Variables Calculadas)
 
-**Paso 5 - Outputs**:
-- Muestra `proyecto_id`, `servidor_nombre`, `regiones_seleccionadas` y `password_length`
+Los `locals` son como variables intermedias que calculan valores reutilizables:[1]
 
-### Fase 3: Resultado Final
+**timestamp_formatted**: Formatea el timestamp con `formatdate()`
+```hcl
+formatdate("YYYY-MM-DD hh:mm:ss ZZZ", timestamp())
+# Resultado: "2025-11-19 02:20:00 -03"
+```
 
-Se crea la siguiente estructura:[1]
+**subnet_cidrs**: Usa `cidrsubnet()` para calcular subredes automáticamente
+```hcl
+cidrsubnet("10.0.0.0/16", 8, 0)  # dev → 10.0.0.0/24
+cidrsubnet("10.0.0.0/16", 8, 1)  # stage → 10.0.1.0/24
+cidrsubnet("10.0.0.0/16", 8, 2)  # prod → 10.0.2.0/24
+cidrsubnet("10.0.0.0/16", 8, 3)  # demo → 10.0.3.0/24
+```
+
+**common_tags**: Define tags estándar para todos los recursos
+```hcl
+{
+  Proyecto = "terraform-advanced"
+  ProyectoID = "a3f8d92c1b4e7e2a"
+  Region = "us-west-2"
+  Terraform = "true"
+  Timestamp = "2025-11-19 02:20:00 -03"
+}
+```
+
+**lb_config**: Genera configuración de load balancer con `for` y `range()`
+```hcl
+prod = {
+  backend_port = 3000
+  health_check_path = "/health"
+  instances = 5
+  target_groups = [
+    "ecommerce-api-prod-0",
+    "ecommerce-api-prod-1",
+    "ecommerce-api-prod-2",
+    "ecommerce-api-prod-3",
+    "ecommerce-api-prod-4"
+  ]
+}
+```
+
+### Generación de Inventario Ansible
+
+**inventory_content** - Usa **heredoc template** con interpolaciones avanzadas:[1]
+
+```ini
+# Resultado generado:
+[dev]
+ecommerce-api-dev-0 ansible_host=10.0.0.10 subnet=10.0.0.0/24
+
+[dev:vars]
+env_name=dev
+cpu_limit=1
+memory_limit=256Mi
+replicas=1
+subnet_cidr=10.0.0.0/24
+
+[prod]
+ecommerce-api-prod-0 ansible_host=10.0.2.10 subnet=10.0.2.0/24
+ecommerce-api-prod-1 ansible_host=10.0.2.11 subnet=10.0.2.0/24
+ecommerce-api-prod-2 ansible_host=10.0.2.12 subnet=10.0.2.0/24
+ecommerce-api-prod-3 ansible_host=10.0.2.13 subnet=10.0.2.0/24
+ecommerce-api-prod-4 ansible_host=10.0.2.14 subnet=10.0.2.0/24
+```
+
+### Archivos Generados con Locals
+
+**ansible_inventory**: Crea archivo `hosts.ini` con el contenido del local
+**network_config**: JSON con configuración de red calculada
+**metrics_config**: YAML con estadísticas agregadas usando `sum()`[1]
+
+## Funciones Clave Utilizadas
+
+**Manipulación de Strings**: `upper()`, `lower()`, `title()`, `replace()`, `format()`, `formatdate()`[1]
+
+**Operaciones de Listas**: `length()`, `join()`, `concat()`, `flatten()`, `index()`[1]
+
+**Operaciones Numéricas**: `sum()`, `min()`, `max()`, `range()`[1]
+
+**Codificación**: `jsonencode()`, `yamlencode()`, `base64encode()`[1]
+
+**Red**: `cidrsubnet()`, `cidrhost()`, `cidrnetmask()`[1]
+
+**Bucles**: `for` expressions con y sin condicionales[1]
+
+**Templates**: Heredoc `<<EOT` con interpolaciones `%{ }` para condicionales e iteraciones[1]
+
+## Resultado Final del `terraform apply`
+
+Cuando ejecutás `terraform apply`, se genera:[1]
 
 ```
-proyecto-a3f8d92c1b4e7e2a/
-├── README.md          (con info del proyecto)
-├── config.json        (configuración en JSON)
-├── init.sh            (script ejecutable)
+terraform-advanced-a3f8d92c1b4e7e2a/
+├── README.md
+├── config.json
+├── init.sh
+├── application.json          # NUEVO: Config principal
+├── config-dev.yaml           # NUEVO: Config por entorno
+├── config-stage.yaml
+├── config-prod.yaml
+├── config-demo.yaml
+├── deploy-dev.sh             # NUEVO: Scripts de deploy
+├── deploy-stage.sh
+├── deploy-prod.sh
+├── deploy-demo.sh
+├── network.json              # NUEVO: Config de red
+├── metrics.yaml              # NUEVO: Métricas
+├── inventory/
+│   └── hosts.ini            # NUEVO: Inventario Ansible
 ├── logs/
-│   └── startup.log    (log de inicialización)
-├── data/              (carpeta vacía)
-└── backups/           (carpeta vacía)
+├── data/
+└── backups/
 ```
 
-## Punto Importante: Variables No Utilizadas
+La gran diferencia es que ahora **funciones.tf** y **outputs.tf** agregan **generación dinámica de configuraciones complejas** basadas en loops, cálculos y funciones, haciendo tu infraestructura muchísimo más flexible y escalable.[1]
 
-Tu archivo `terraform.tfvars` define muchas variables (`proyecto_nombre`, `instancias_count`, `configuracion_entornos`, etc.) **PERO** ningún recurso las está usando actualmente.  Tus recursos usan valores hardcodeados directamente (como `byte_length = 8`, `length = 16`, etc.).[1]
-
-Para usar estas variables, deberías modificar tus recursos, por ejemplo:[1]
-
-```hcl
-# En lugar de:
-resource "random_password" "db_password" {
-  length = 16
-}
-
-# Podrías usar:
-resource "random_password" "db_password" {
-  length = var.instancias_count * 3  # usando la variable
-}
-```
-
-En resumen: **`terraform.tfvars` sobrescribe `variables.tf`**, los archivos se ejecutan según dependencias (no alfabéticamente), y las variables están definidas pero no se usan en los recursos actuales.[5][2][1]
-
-[1](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/21265984/51c4ebef-b4c9-432d-a9cc-23531e06f4ca/terraform.txt)
-[2](https://spacelift.io/blog/terraform-tfvars)
-[3](https://wintelguy.com/2025/understanding-terraform-variable-precedence.html)
-[4](https://www.linkedin.com/posts/anupam-kumar-03053964_iac-devops-cloudcomputing-activity-7344643224189222912-029a)
-[5](https://discuss.hashicorp.com/t/order-of-run-tf-file/34998)
+[1](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/21265984/6e10d6e7-65ac-429e-a00c-cb5a20dfaf52/terraform.txt)
