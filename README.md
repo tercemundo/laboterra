@@ -1,4 +1,4 @@
-Perfecto, te explico detalladamente qué hace cada archivo de tu configuración de Terraform cuando ejecutás `terraform apply`:[1]
+
 
 ## Orden de Ejecución
 
